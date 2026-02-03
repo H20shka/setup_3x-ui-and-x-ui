@@ -46,16 +46,44 @@ git checkout v1.4.6 || error_exit "Не удалось переключитьс�
 echo "Шаг 6: Запуск 3x-ui в фоне..."
 docker-compose up -d || error_exit "Не удалось запустить 3x-ui"
 
-# Шаг 7: Определение IP-адреса и проверка доступности
-echo "Шаг 7: Определение внешнего IP-адреса сервера..."
-SERVER_IP=$(curl -s --connect-timeout 5 ifconfig.me 2>/dev/null || \
-            curl -s --connect-timeout 5 ipinfo.io/ip 2>/dev/null || \
-            curl -s --connect-timeout 5 icanhazip.com 2>/dev/null || \
-            hostname -I 2>/dev/null | awk '{print $1}')
+# Шаг 7: Определение IPv4-адреса сервера
+echo "Шаг 7: Определение внешнего IPv4-адреса сервера..."
 
-if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "127.0.0.1" ] || [ "$SERVER_IP" = "localhost" ]; then
-    echo "⚠️  Не удалось определить внешний IP. Возможно, сервер за NAT или без интернета."
-    echo "   Попробуйте использовать локальный IP: $(hostname -I | awk '{print $1}')"
+# Функция для проверки IPv4
+is_ipv4() {
+    local ip=$1
+    if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Попытка получить внешний IPv4
+SERVER_IP=""
+for service in "ifconfig.me" "ipinfo.io/ip" "icanhazip.com"; do
+    ip=$(curl -s --connect-timeout 5 "$service" 2>/dev/null)
+    if [ -n "$ip" ] && is_ipv4 "$ip"; then
+        SERVER_IP="$ip"
+        break
+    fi
+done
+
+# Fallback на локальный IPv4
+if [ -z "$SERVER_IP" ]; then
+    local_ips=$(hostname -I 2>/dev/null)
+    for ip in $local_ips; do
+        if is_ipv4 "$ip" && [ "$ip" != "127.0.0.1" ]; then
+            SERVER_IP="$ip"
+            echo "⚠️  Используется локальный IPv4: $SERVER_IP"
+            break
+        fi
+    done
+fi
+
+if [ -z "$SERVER_IP" ]; then
+    echo "❌ Не удалось определить IPv4-адрес сервера."
+    echo "   Проверьте подключение к интернету и настройки сети."
     SERVER_IP="yourserverip"
 fi
 
